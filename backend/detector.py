@@ -1,6 +1,38 @@
 import pandas as pd
 import numpy as np
 
+
+"""
+BEHAVIORAL BIAS DEFINITIONS
+---------------------------
+
+1. OVERTRADING
+   Definition: Excessive buying and selling triggered by emotion (boredom, excitement) rather than statistical edge.
+   Detection Logic: High trade frequency within short time windows (e.g., >10 trades/hour).
+
+2. LOSS AVERSION
+   Definition: The psychological tendency to prefer avoiding losses to acquiring equivalent gains.
+   Detection Logic: Win/Loss ratio < 1.0 (trader takes small profits but holds large losses).
+   
+3. REVENGE TRADING
+   Definition: An emotional attempt to force the market to return lost capital immediately after a drawdown.
+   Detection Logic: significantly increased volume or frequency immediately following a loss.
+
+4. DISPOSITION EFFECT
+   Definition: The tendency to sell winning positions too early (to lock in certainty) while holding losing positions too long (hoping for a rebound).
+   Detection Logic: Average duration of losing trades > Average duration of winning trades.
+
+5. GAMBLER'S FALLACY (MONTE CARLO BIAS)
+   Definition: The erroneous belief that a streak of independent events increases the probability of a reversal (e.g., "It's been Green 5 times, it MUST be Red next").
+   Detection Logic: Betting against the trend after a streak of N consecutive candles/trades.
+
+6. RECENCY BIAS
+   Definition: Overweighting the significance of the most recent data while ignoring long-term historical probabilities.
+   Detection Logic: Drastic changes in risk sizing based solely on the outcome of the last 3-5 trades.
+"""
+
+
+
 class BiasDetector:
     def __init__(self, df):
         self.df = df.sort_values('timestamp')
