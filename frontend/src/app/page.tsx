@@ -77,7 +77,7 @@ export default function Dashboard() {
             {/* LOGO: Increased to h-10 w-10 (40px) for better weight against the text */}
             <div className="relative h-9 w-9 shrink-0"> 
               <Image 
-                src="/app-logo.png" 
+                src="/ResetPoint-Logo.png" 
                 alt="ResetPoint Logo" 
                 fill 
                 className="object-contain mix-blend-screen" 
