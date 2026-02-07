@@ -27,75 +27,105 @@ client = OpenAI(
     api_key=os.getenv("OPENROUTER_API_KEY"),
 )
 
+from openai import OpenAI, RateLimitError # Make sure RateLimitError is imported at the top of your file
+
 def generate_ai_advice(biases, stats):
     """
-    Sends the detected bias data to OpenRouter (DeepSeek/Llama/Claude)
-    and returns 3 specific, actionable coaching tips.
+    Sends data to OpenRouter with a 'Behavioral Finance Coach' persona.
+    Returns 3 specific, educational, and actionable tips.
     """
-
     try:
-        # 1. Construct the Prompt
-        # We summarize the detected issues into a string
-        detected_issues = [k for k, v in biases.items() if v['detected']]
+        # 1. Filter for only the detected problems to save token space & focus attention
+        detected_problems = {k: v for k, v in biases.items() if v.get('detected', False)}
         
-        if not detected_issues:
-            return ["✨ Your trading psychology is excellent. No major biases detected.", 
-                    "✅ Maintain your current risk management protocols.", 
-                    "📈 Focus on scaling up size slowly as your edge is confirmed."]
+        # If no problems, return praise
+        if not detected_problems:
+            return [
+                "✨ Performance Check: Your psychology is clean. No major biases detected.",
+                "✅ Discipline: Maintain your current risk management protocols.",
+                "📈 Next Step: Focus on scaling up position size slowly as your edge is confirmed."
+            ]
 
-        prompt = f"""
-        You are a harsh but effective Trading Psychology Coach like Wendy Rhoades from Billions.
+        # 2. Construct the "System" Persona (The Behavioral Coach)
+        system_instruction = """
+        You are ResetPoint, an advanced Behavioral Finance Engine.
+        Your goal is to help traders detect harmful patterns in their history and improve their future performance.
         
-        USER STATS:
-        - Account Balance: ${stats['account_balance']}
-        - Total Trades: {stats['total_trades']}
-        - DETECTED BIASES: {", ".join(detected_issues)}
-        
-        DATA CONTEXT:
-        {json.dumps(biases, indent=2)}
-
-        TASK:
-        Provide exactly 3 extremely specific, actionable rules for this trader to fix their mind.
-        Do not be generic. Be strict.
-        
-        FORMAT:
-        Return ONLY a raw JSON list of strings. Example: ["Rule 1...", "Rule 2...", "Rule 3..."]
+        TONE:
+        - Professional, insightful, and constructive.
+        - Firm but educational (like a high-performance sports coach).
+        - Focus on "Why" the behavior is happening, not just "What" happened.
         """
 
-        # 2. Call OpenRouter
-        # 'deepseek/deepseek-r1' is great for logic, or 'meta-llama/llama-3.3-70b-instruct' for speed.
+        # 3. Construct the "User" Context (The Data)
+        user_prompt = f"""
+        TRADER DATA:
+        - Balance: ${stats.get('account_balance', 0)}
+        - Detected Patterns: {json.dumps(detected_problems, indent=2)}
+        
+        TASK:
+        Generate 3 distinct insights to improve this trader's performance.
+        
+        FORMAT GUIDELINES:
+        - Insight 1 (Immediate Risk): Address the most dangerous bias detected (e.g., Revenge Trading). Explain *why* it is destroying their edge.
+        - Insight 2 (Behavioral Pattern): Identify a subtle habit (e.g., holding losers too long) and explain the psychological trigger.
+        - Insight 3 (Actionable Fix): Give one specific, mechanical rule to implement tomorrow (e.g., "Set a hard stop at 1%").
+        
+        BAD RESPONSE:
+        ["Stop trading now.", "You are losing money.", "Be more careful."]
+        
+        GOOD RESPONSE:
+        [
+            "⚠️ Pattern Detected: You are 'Revenge Trading' after losses. This indicates you are trading your P&L, not the chart. Walk away for 2 hours.",
+            "📉 Disposition Bias: You hold losing trades 3x longer than winners. You are hoping for a rebound instead of accepting the loss.",
+            "✅ Action Plan: Implement a '2-Strike Rule'. If you lose 2 trades in a row, force a 60-minute break to reset your mental state."
+        ]
+        
+        OUTPUT FORMAT:
+        Return ONLY a raw JSON list of 3 strings.
+        """
+
+        # 4. Call OpenRouter
         completion = client.chat.completions.create(
-            model="deepseek/deepseek-chat", # or "meta-llama/llama-3-8b-instruct:free"
+            model="deepseek/deepseek-chat", # Smart, cheap, and reliable
             messages=[
-                {"role": "system", "content": "You are a trading psychology expert."},
-                {"role": "user", "content": prompt},
+                {"role": "system", "content": system_instruction},
+                {"role": "user", "content": user_prompt},
             ],
-            # extra_headers MUST be inside the create() call for OpenRouter
+            temperature=0.72,
             extra_headers={
                 "HTTP-Referer": os.getenv("YOUR_SITE_URL"),
                 "X-Title": os.getenv("YOUR_SITE_NAME"),
             }
         )
 
-        # 3. Parse Response
+        # 5. Parse Response
         content = completion.choices[0].message.content
         
-        # Clean up code blocks if the AI adds them (e.g. ```json ... ```)
+        # Clean up markdown code blocks if present
         if "```" in content:
             content = content.split("```")[1].replace("json", "").strip()
-        
-        print("AI Raw Response:", content) # Debugging log to see the raw AI output
+            
+        print("\n🤖 AI Advice Generated Successfully.\n")
         return json.loads(content)
 
+    except RateLimitError:
+        print("\n⚠️  QUOTA ERROR: OpenRouter credits exhausted (Error 402).")
+        print("   -> Using fallback advice to keep app running.\n")
+        return [
+            "⚠️ AI Usage Limit Reached: Please check API credits.",
+            "📉 Critical Risk: Implement a hard stop-loss at 1% of equity per trade.",
+            "🛑 Circuit Breaker: Stop trading for the day if you lose 3 trades in a row."
+        ]
+
     except Exception as e:
-        print(f"AI Error: {e}") # Only print error to the terminal, not the UI
+        print(f"AI Error: {e}")
         # Return clean, professional fallback advice so the UI looks good
         return [
             "📉 Market Volatility Protocol: Reduce your position size by 50% immediately.",
             "🛑 Circuit Breaker: If you lose 2 trades in a row today, stop trading for 1 hour.",
             "🧠 Psychological Reset: Your metrics show stress. Switch to demo trading for the next session."
         ]
-
 @app.post("/analyze")
 async def analyze_trading_data(file: UploadFile = File(...)):
     try:
