@@ -6,7 +6,7 @@ class BiasDetector:
         self.df = df.sort_values('timestamp')
 
     def detect_overtrading(self):
-        self.df['hour'] = self.df['timestamp'].dt.to_period('H')
+        self.df['hour'] = self.df['timestamp'].dt.to_period('h')
         max_trades_hour = self.df.groupby('hour').size().max()
         
         # LOGIC: 150 trades/hr is the "High Frequency" cutoff.
