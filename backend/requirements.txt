@@ -1,8 +1,5 @@
-# Data Processing
-numpy
-pandas
-scikit-learn
-
-# API & Networking
 fastapi[standard]
 python-multipart
+pandas
+numpy
+scikit-learn  # Ready and waiting for Phase 2
