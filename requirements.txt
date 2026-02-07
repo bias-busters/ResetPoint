@@ -1,5 +1,8 @@
+# Data Processing
 numpy
 pandas
-plotly
 scikit-learn
-streamlit
+
+# API & Networking
+fastapi[standard]
+python-multipart
