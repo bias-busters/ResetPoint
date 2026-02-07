@@ -1,102 +1,134 @@
-# =================================================================
-# BIAS DETECTION ENGINE
-# =================================================================
-
-# 1. OVERTRADING: Excessive frequency relative to time and balance.
-# 2. LOSS AVERSION: Holding losers too long; emotional attachment to bad trades.
-# 3. REVENGE TRADING: Impulsive "size-up" immediately following a loss.
-# 4. DISPOSITION EFFECT: Realizing small gains too early while letting losses run.
-# 5. RECENCY BIAS: Over-weighting the most recent 5 trades to dictate future risk.
-# 6. MONTE CARLO FALLACY: Betting on a "reversal" just because a trend has lasted "too long."
-
 import pandas as pd
 import numpy as np
 
 class BiasDetector:
     def __init__(self, df):
-        # Sorting by timestamp is critical for time-based clustering analysis [cite: 36]
         self.df = df.sort_values('timestamp')
 
-    # --- Core Biases Required by Challenge ---
-
     def detect_overtrading(self):
-        """Analyze excessive number of trades and time-based clustering[cite: 31, 36]."""
         self.df['hour'] = self.df['timestamp'].dt.to_period('H')
         max_trades_hour = self.df.groupby('hour').size().max()
         
-        # Threshold: 5+ trades an hour is often considered impulsive for retail [cite: 36]
-        is_overtrading = max_trades_hour > 5 
+        # LOGIC: 150 trades/hr is the "High Frequency" cutoff.
+        threshold = 150
+        is_overtrading = max_trades_hour > threshold
         return {
             "detected": bool(is_overtrading),
-            "metric": f"{max_trades_hour} trades/hr",
-            "summary": "You are trading too frequently in short bursts." if is_overtrading else "Trade frequency is disciplined."
+            "metric": f"{max_trades_hour} trades/hr (Limit: {threshold})",
+            "summary": "Extreme trading frequency detected in short bursts." if is_overtrading else "Trade frequency is within normal limits."
         }
 
     def detect_loss_aversion(self):
-        """Identify higher average loss size than average win size[cite: 38, 43]."""
         wins = self.df[self.df['profit_loss'] > 0]['profit_loss']
         losses = self.df[self.df['profit_loss'] < 0]['profit_loss'].abs()
         
         avg_win = wins.mean() if not wins.empty else 0
         avg_loss = losses.mean() if not losses.empty else 0
         
-        is_averse = avg_loss > (avg_win * 1.2)
+        # LOGIC: Losses must be 1.75x larger than wins to flag.
+        ratio = avg_loss / avg_win if avg_win > 0 else 0
+        is_averse = avg_loss > (avg_win * 1.75)
+        
         return {
             "detected": bool(is_averse),
-            "ratio": round(avg_loss / avg_win, 2) if avg_win > 0 else 0,
-            "summary": "Your losses are significantly larger than your wins." if is_averse else "Your risk/reward ratio is healthy."
+            "metric": f"Loss/Win Ratio: {round(ratio, 2)}x",
+            "summary": "Your average losses are significantly larger than your winners." if is_averse else "Risk management is disciplined."
         }
 
     def detect_revenge_trading(self):
-        """Identify increased risk-taking immediately after a loss[cite: 45, 47, 48]."""
+        """
+        ML APPROACH: Z-Score Anomaly Detection.
+        Instead of a fixed multiplier (e.g. 3x), we ask:
+        'Is this trade statistically an outlier for THIS specific user?'
+        """
+        # 1. Prepare Data
         self.df['prev_pl'] = self.df['profit_loss'].shift(1)
-        self.df['prev_qty'] = self.df['quantity'].shift(1)
         
-        # Detected if quantity increases by 50% immediately following a negative P/L [cite: 47]
-        revenge_mask = (self.df['prev_pl'] < 0) & (self.df['quantity'] > self.df['prev_qty'] * 1.5)
-        is_revenge = revenge_mask.any()
+        # Filter for trades immediately following a loss
+        loss_following_trades = self.df[self.df['prev_pl'] < 0].copy()
         
+        if len(loss_following_trades) < 5:
+            return {"detected": False, "metric": "Insufficient Data", "summary": "Not enough post-loss trades to analyze."}
+
+        # 2. Calculate Statistics for THIS USER (Personalized Baseline)
+        # We look at 'quantity' (position size)
+        user_avg_size = self.df['quantity'].mean()
+        user_std_dev = self.df['quantity'].std()
+        
+        if user_std_dev == 0:
+            return {"detected": False, "metric": "Stable Sizing", "summary": "You never change your position size."}
+
+        # 3. Calculate Z-Score for every post-loss trade
+        # Z-Score = (Current Size - Average Size) / Standard Deviation
+        # A Z-Score > 3 means this event is in the top 0.1% of 'weirdness' for this user.
+        loss_following_trades['z_score'] = (loss_following_trades['quantity'] - user_avg_size) / user_std_dev
+        
+        # 4. Identify Anomalies (Revenge Trades)
+        # We flag trades that are 3 standard deviations above the mean AND after a loss.
+        anomalies = loss_following_trades[loss_following_trades['z_score'] > 3]
+        anomaly_count = len(anomalies)
+        
+        # 5. Final Verdict
+        # We only flag if these anomalies make up > 1% of their post-loss activity
+        # This allows for the occasional 'fat finger' error without flagging bias.
+        anomaly_ratio = anomaly_count / len(loss_following_trades)
+        is_revenge = anomaly_ratio > 0.01
+
         return {
             "detected": bool(is_revenge),
-            "summary": "You tend to increase trade size to 'win back' losses." if is_revenge else "You maintain steady sizing after a loss."
+            "metric": f"{anomaly_count} statistical outliers (Z-Score > 3)",
+            "summary": "AI detected distinct spikes in risk that deviate from your normal baseline." if is_revenge else "Your risk sizing is statistically consistent, even after losses."
         }
 
-    # --- Advanced Biases for Extra Credit [cite: 65] ---
-
     def detect_monte_carlo_fallacy(self):
-        """The belief that a streak of one side (e.g., BUYs) makes a reversal (SELL) more likely."""
         self.df['is_buy'] = self.df['side'].str.upper() == 'BUY'
-        # Grouping consecutive same-side trades
         streaks = (self.df['is_buy'] != self.df['is_buy'].shift()).cumsum()
         streak_counts = self.df.groupby(streaks).size()
-        
-        # If a user opens 4+ trades in the same direction, they may be 'betting' on a reversal
-        is_fallacy = streak_counts.max() >= 4
+        max_streak = streak_counts.max()
+
+        # Threshold: 15 consecutive buys/sells is rare even for algos.
+        threshold = 15
+        is_fallacy = max_streak >= threshold
         return {
             "detected": bool(is_fallacy),
-            "max_streak": int(streak_counts.max()),
-            "summary": "You may be stubbornly betting on a trend reversal." if is_fallacy else "Position switching looks rational."
+            "metric": f"Max streak: {max_streak}",
+            "summary": f"You bet in the same direction {max_streak} times in a row." if is_fallacy else "No irrational streak betting detected."
         }
 
     def detect_disposition_effect(self):
-        """Holding losing trades run too long while closing winners too early[cite: 40, 41]."""
-        # Note: In a real app, this would use entry/exit timestamps to find 'duration'
-        # For this mockup, we flag if the user has many more small wins than large losses.
         wins = self.df[self.df['profit_loss'] > 0]
         losses = self.df[self.df['profit_loss'] < 0]
         
-        is_dispo = len(wins) > (len(losses) * 2) and wins['profit_loss'].mean() < losses['profit_loss'].abs().mean()
+        # Stricter: Must have 5x more wins AND average win must be smaller than avg loss
+        is_dispo = (len(wins) > len(losses) * 5) and (wins['profit_loss'].mean() < losses['profit_loss'].abs().mean())
         return {
             "detected": bool(is_dispo),
-            "summary": "You are 'cutting your flowers and watering your weeds'." if is_dispo else "You exit trades based on strategy, not fear."
+            "metric": "N/A",
+            "summary": "Likely taking small profits quickly while letting losses run." if is_dispo else "No clear evidence of the disposition effect."
+        }
+
+    def detect_recency_bias(self):
+        if len(self.df) < 10:
+            return {"detected": False, "metric": "N/A", "summary": "Not enough data."}
+
+        recent_volatility = self.df['quantity'].tail(5).std()
+        historical_volatility = self.df['quantity'].std()
+
+        ratio = recent_volatility / historical_volatility if historical_volatility > 0 else 0
+        is_recency = ratio > 2.0
+
+        return {
+            "detected": bool(is_recency),
+            "metric": f"Recent Volatility: {round(ratio, 2)}x",
+            "summary": "Recent behavior is significantly more erratic than your baseline." if is_recency else "Recent behavior aligns with long-term consistency."
         }
 
     def run_all_tests(self):
-        """Consolidate results for the Next.js frontend to display[cite: 55, 57]."""
         return {
             "overtrading": self.detect_overtrading(),
             "loss_aversion": self.detect_loss_aversion(),
             "revenge_trading": self.detect_revenge_trading(),
             "monte_carlo": self.detect_monte_carlo_fallacy(),
-            "disposition": self.detect_disposition_effect()
+            "disposition": self.detect_disposition_effect(),
+            "recency_bias": self.detect_recency_bias()
         }

@@ -1,15 +1,17 @@
 "use client"
 
+import Image from "next/image"
 import { useState } from "react"
 import axios from "axios"
-import { AlertTriangle, CheckCircle, TrendingUp, Activity, BrainCircuit } from "lucide-react"
+import { AlertTriangle, TrendingUp, Activity, BrainCircuit, RotateCcw, BarChart3 } from "lucide-react"
 import { UploadZone } from "@/components/upload-zone"
 import { BiasRadar } from "@/components/bias-radar"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 
-// Define the shape of the API response
+
+// Define the shape of the data returning from FastAPI
 interface AnalysisResponse {
   status: string
   metadata: {
@@ -20,10 +22,13 @@ interface AnalysisResponse {
   biases: {
     overtrading: { detected: boolean; summary: string; metric?: string }
     loss_aversion: { detected: boolean; summary: string; ratio?: number }
-    revenge_trading: { detected: boolean; summary: string }
-    monte_carlo: { detected: boolean; summary: string }
-    disposition: { detected: boolean; summary: string }
+    revenge_trading: { detected: boolean; summary: string; metric?: string }
+    monte_carlo: { detected: boolean; summary: string; metric?: string }
+    disposition: { detected: boolean; summary: string; metric?: string }
+    recency_bias: { detected: boolean; summary: string; metric?: string }
   }
+  // This array comes from the new 'generate_ai_advice' function in backend
+  ai_advice: string[]
 }
 
 export default function Dashboard() {
@@ -34,7 +39,6 @@ export default function Dashboard() {
 
   const handleAnalyze = async () => {
     if (!file) return
-
     setIsLoading(true)
     setError(null)
     
@@ -42,13 +46,13 @@ export default function Dashboard() {
     formData.append("file", file)
 
     try {
-      // Connect to your FastAPI Backend
+      // Ensure your backend is running on port 8000
       const response = await axios.post("http://localhost:8000/analyze", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       })
       setResult(response.data)
     } catch (err) {
-      setError("Failed to analyze file. Ensure the backend is running on port 8000.")
+      setError("Analysis failed. Ensure backend is running.")
       console.error(err)
     } finally {
       setIsLoading(false)
@@ -58,158 +62,148 @@ export default function Dashboard() {
   const reset = () => {
     setFile(null)
     setResult(null)
-    setError(null)
   }
 
   return (
-    <main className="min-h-screen bg-background text-foreground p-6 md:p-12 font-sans">
-      <div className="max-w-6xl mx-auto space-y-8">
+    <main className="min-h-screen bg-background text-foreground p-4 md:p-6 font-sans">
+      <div className="max-w-7xl mx-auto space-y-4">
         
-        {/* Header */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight text-primary">ResetPoint</h1>
-            <p className="text-muted-foreground">Behavioral Bias Detection System</p>
+        {/* HEADER */}
+     <div className="flex justify-between items-center border-b border-border pb-4">
+          
+          {/* Container for Logo + Text */}
+          <div className="flex items-center gap-2"> 
+            
+            {/* LOGO: Increased to h-10 w-10 (40px) for better weight against the text */}
+            <div className="relative h-9 w-9 shrink-0"> 
+              <Image 
+                src="/app-logo.png" 
+                alt="ResetPoint Logo" 
+                fill 
+                className="object-contain mix-blend-screen" 
+              />
+            </div>
+            
+            {/* TEXT: Tightened leading (line-height) to lock it to the logo */}
+            <div className="flex flex-col justify-center"> 
+              <h1 className="text-2xl font-bold tracking-tight text-foreground leading-none">
+                ResetPoint
+              </h1>
+              <p className="text-[10px] text-muted-foreground uppercase tracking-[0.2em] font-medium mt-1">
+                Behavioral Analytics
+              </p>
+            </div>
           </div>
+          
           {result && (
-            <Button variant="outline" onClick={reset}>
+            <Button variant="outline" size="sm" onClick={reset}>
               Analyze New File
             </Button>
           )}
         </div>
+     
 
-        {/* ERROR STATE */}
+        {/* ERROR MESSAGE */}
         {error && (
-          <div className="p-4 rounded-md bg-destructive/10 text-destructive border border-destructive/20">
+          <div className="p-3 rounded bg-destructive/10 text-destructive text-sm border border-destructive/20">
             {error}
           </div>
         )}
 
-        {/* UPLOAD STATE (Visible only when no result) */}
+        {/* UPLOAD VIEW (Visible when no result) */}
         {!result && (
-          <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-6 fade-in">
-            <div className="w-full max-w-2xl text-center space-y-2">
-              <h2 className="text-2xl font-semibold">Upload Trading History</h2>
-              <p className="text-muted-foreground">
-                Drag and drop your CSV file to detect hidden psychological biases.
-              </p>
-            </div>
-            
+          <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-6 fade-in">
             <UploadZone onFileSelect={setFile} />
-
             {file && (
               <Button 
-                size="lg" 
                 onClick={handleAnalyze} 
-                disabled={isLoading}
-                className="w-full max-w-xs"
+                disabled={isLoading} 
+                className="w-full max-w-xs bg-primary text-primary-foreground shadow-[0_0_20px_rgba(59,130,246,0.25)] hover:shadow-[0_0_25px_rgba(59,130,246,0.45)] hover:bg-primary/90 transition-all duration-300"
               >
-                {isLoading ? "Analyzing..." : "Run Bias Engine"}
+                {isLoading ? (
+                  <span className="flex items-center gap-2">
+                    <Activity className="animate-spin h-4 w-4" /> Processing...
+                  </span>
+                ) : (
+                  "Run Analysis"
+                )}
               </Button>
             )}
-            
-            {isLoading && (
-              <div className="w-full max-w-md space-y-2">
-                <Progress value={66} className="h-2" />
-                <p className="text-xs text-center text-muted-foreground animate-pulse">
-                  Processing trades & identifying patterns...
-                </p>
-              </div>
-            )}
+            {isLoading && <Progress value={66} className="h-1 w-64" />}
           </div>
         )}
 
-        {/* RESULTS DASHBOARD */}
+        {/* ANALYTICS DASHBOARD (Visible after analysis) */}
         {result && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-in slide-in-from-bottom-4 duration-500">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
             
-            {/* Column 1: Profile & Radar */}
-            <div className="space-y-6">
-              <Card className="border-primary/20 bg-card/50">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Activity className="h-5 w-5 text-primary" /> 
-                    Trader Profile
+            {/* LEFT COLUMN: Sticky Radar Chart & Metrics */}
+            <div className="md:col-span-4 lg:col-span-3 space-y-4 h-full">
+              <Card className="border-border bg-card/50 shadow-sm sticky top-4">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                    Psychological Profile
                   </CardTitle>
-                  <CardDescription>Psychological Signature</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <BiasRadar results={result.biases} />
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Account Metrics</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex justify-between items-center pb-2 border-b">
-                    <span className="text-muted-foreground">Filename</span>
-                    <span className="font-mono text-sm">{result.metadata.filename}</span>
-                  </div>
-                  <div className="flex justify-between items-center pb-2 border-b">
-                    <span className="text-muted-foreground">Total Trades</span>
-                    <span className="font-mono">{result.metadata.total_trades}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-muted-foreground">Ending Balance</span>
-                    <span className={`font-mono font-bold ${result.metadata.account_balance >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                      ${result.metadata.account_balance.toLocaleString()}
-                    </span>
+                  
+                  {/* Embedded Account Metrics */}
+                  <div className="mt-6 space-y-3 pt-4 border-t border-border">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">File</span>
+                      <span className="font-mono text-foreground">{result.metadata.filename}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Trades</span>
+                      <span className="font-mono text-foreground">{result.metadata.total_trades}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Balance</span>
+                      <span className={`font-mono font-bold ${result.metadata.account_balance >= 0 ? 'text-green-500' : 'text-destructive'}`}>
+                        ${result.metadata.account_balance.toLocaleString()}
+                      </span>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
             </div>
 
-            {/* Column 2 & 3: Detailed Bias Cards */}
-            <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* RIGHT COLUMN: Bias Cards & AI Coach */}
+            <div className="md:col-span-8 lg:col-span-9 space-y-4">
               
-              <BiasCard 
-                title="Overtrading" 
-                data={result.biases.overtrading} 
-                icon={<TrendingUp className="h-5 w-5" />}
-              />
-              <BiasCard 
-                title="Loss Aversion" 
-                data={result.biases.loss_aversion} 
-                icon={<AlertTriangle className="h-5 w-5" />}
-              />
-              <BiasCard 
-                title="Revenge Trading" 
-                data={result.biases.revenge_trading} 
-                icon={<BrainCircuit className="h-5 w-5" />}
-              />
-              <BiasCard 
-                title="Disposition Effect" 
-                data={result.biases.disposition} 
-                icon={<Activity className="h-5 w-5" />}
-              />
-              <BiasCard 
-                title="Monte Carlo Fallacy" 
-                data={result.biases.monte_carlo} 
-                icon={<Activity className="h-5 w-5" />}
-              />
+              {/* THE GRID: 6 Bias Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                <BiasCard title="Overtrading" data={result.biases.overtrading} icon={<TrendingUp className="h-4 w-4" />} />
+                <BiasCard title="Loss Aversion" data={result.biases.loss_aversion} icon={<AlertTriangle className="h-4 w-4" />} />
+                <BiasCard title="Revenge Trading" data={result.biases.revenge_trading} icon={<BrainCircuit className="h-4 w-4" />} />
+                <BiasCard title="Disposition Effect" data={result.biases.disposition} icon={<BarChart3 className="h-4 w-4" />} />
+                <BiasCard title="Monte Carlo" data={result.biases.monte_carlo} icon={<RotateCcw className="h-4 w-4" />} />
+                <BiasCard title="Recency Bias" data={result.biases.recency_bias} icon={<Activity className="h-4 w-4" />} />
+              </div>
 
-              {/* Personalized Suggestion Box */}
-              <Card className="col-span-1 sm:col-span-2 bg-primary/5 border-primary/20">
-                <CardHeader>
-                  <CardTitle className="text-primary">AI Coach Recommendations</CardTitle>
+              {/* AI COACH: Full Width Card */}
+              <Card className="bg-primary/5 border-primary/20">
+                <CardHeader className="py-3">
+                  <CardTitle className="text-sm font-medium text-primary flex items-center gap-2">
+                    <BrainCircuit className="h-4 w-4" /> AI Strategy Adjustments
+                  </CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <ul className="list-disc list-inside space-y-2 text-sm">
-                    {result.biases.overtrading.detected && (
-                      <li><strong>Cooling-off Period:</strong> Mandate a 1-hour break after 3 consecutive trades.</li>
-                    )}
-                    {result.biases.revenge_trading.detected && (
-                      <li><strong>Risk Lock:</strong> Reduce position size by 50% immediately after a loss.</li>
-                    )}
-                    {result.biases.loss_aversion.detected && (
-                      <li><strong>Hard Stops:</strong> Automate your exit strategy to remove emotion from losing trades.</li>
-                    )}
-                    {!result.biases.overtrading.detected && !result.biases.revenge_trading.detected && (
-                      <li className="text-muted-foreground">Your trading psychology appears stable. Keep maintaining your discipline.</li>
+                <CardContent className="pb-3 text-sm text-muted-foreground">
+                  
+                  {/* UPDATED: Dynamic AI List */}
+                  <ul className="grid grid-cols-1 md:grid-cols-2 gap-2 list-disc list-inside">
+                    {result.ai_advice && result.ai_advice.length > 0 ? (
+                      result.ai_advice.map((tip, index) => (
+                        <li key={index} className="leading-relaxed">
+                          {tip}
+                        </li>
+                      ))
+                    ) : (
+                      <li>No specific AI recommendations generated for this dataset.</li>
                     )}
                   </ul>
+
                 </CardContent>
               </Card>
 
@@ -221,25 +215,35 @@ export default function Dashboard() {
   )
 }
 
-// Simple Helper Component for the Grid
+// --- HELPER COMPONENT: Ultra Compact Bias Card ---
 function BiasCard({ title, data, icon }: { title: string, data: any, icon: any }) {
   return (
-    <Card className={`transition-all ${data.detected ? 'border-destructive/50 bg-destructive/5' : 'border-green-500/20 bg-green-500/5'}`}>
-      <CardHeader className="pb-2">
+    <Card className={`flex flex-col justify-between transition-all border-l-4 ${data.detected ? 'border-l-destructive' : 'border-l-green-500'} border-y-0 border-r-0 bg-card shadow-sm`}>
+      <CardHeader className="p-3 pb-0">
         <div className="flex justify-between items-start">
-          <CardTitle className="text-base font-medium flex items-center gap-2">
-            {icon} {title}
+          <CardTitle className="text-sm font-semibold flex items-center gap-2 text-foreground">
+            <div className={`p-1.5 rounded-full ${data.detected ? 'bg-destructive/10 text-destructive' : 'bg-green-500/10 text-green-500'}`}>
+              {icon}
+            </div>
+            {title}
           </CardTitle>
           {data.detected ? (
-            <span className="bg-destructive/15 text-destructive text-xs px-2 py-1 rounded-full font-bold">DETECTED</span>
+            <span className="text-[10px] text-destructive border border-destructive/20 px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">Detected</span>
           ) : (
-            <span className="bg-green-500/15 text-green-500 text-xs px-2 py-1 rounded-full font-bold">PASS</span>
+            <span className="text-[10px] text-green-500 border border-green-500/20 px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">Pass</span>
           )}
         </div>
       </CardHeader>
-      <CardContent>
-        <p className="text-sm text-muted-foreground">{data.summary}</p>
-        {data.metric && <p className="text-xs font-mono mt-2 pt-2 border-t border-dashed border-border/50">Metric: {data.metric}</p>}
+      <CardContent className="p-3 pt-2">
+        <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2 min-h-[2.5em]">
+          {data.summary}
+        </p>
+        {data.metric && (
+          <div className="mt-2 pt-2 border-t border-border/40 flex justify-between items-center">
+             <span className="text-[10px] text-muted-foreground uppercase font-medium">Metric</span>
+             <span className="text-xs font-mono text-foreground">{data.metric}</span>
+          </div>
+        )}
       </CardContent>
     </Card>
   )

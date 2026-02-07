@@ -71,6 +71,7 @@ export function UploadZone({ onFileSelect }: UploadZoneProps) {
           <div className="flex flex-col items-center animate-in fade-in zoom-in duration-300">
             <div className="p-4 bg-green-500/20 rounded-full mb-4">
               <FileSpreadsheet className="h-10 w-10 text-green-500" />
+              
             </div>
             <p className="text-lg font-medium text-foreground">{selectedFile.name}</p>
             <p className="text-sm text-muted-foreground mt-1">
