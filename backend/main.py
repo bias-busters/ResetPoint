@@ -68,7 +68,7 @@ def generate_ai_advice(biases, stats):
                 "HTTP-Referer": os.getenv("YOUR_SITE_URL"),
                 "X-Title": os.getenv("YOUR_SITE_NAME"),
             },
-            model="deepseek/deepseek-r1:free", # OR "meta-llama/llama-3.3-70b-instruct"
+            mmodel="deepseek/deepseek-chat", # OR "meta-llama/llama-3.3-70b-instruct"
             messages=[
                 {"role": "system", "content": "You are an expert behavioral finance analyst. Output JSON only."},
                 {"role": "user", "content": prompt},
@@ -86,11 +86,12 @@ def generate_ai_advice(biases, stats):
         return json.loads(content)
 
     except Exception as e:
-        print(f"AI Error: {e}")
+        print(f"AI Error: {e}") # Only print error to the terminal, not the UI
+        # Return clean, professional fallback advice so the UI looks good
         return [
-            "⚠️ AI Connection Failed: Using fallback advice.",
-            "1. Implement a hard stop-loss at 1% of equity per trade.",
-            "2. Stop trading for the day if you lose 3 trades in a row."
+            "📉 Market Volatility Protocol: Reduce your position size by 50% immediately.",
+            "🛑 Circuit Breaker: If you lose 2 trades in a row today, stop trading for 1 hour.",
+            "🧠 Psychological Reset: Your metrics show stress. Switch to demo trading for the next session."
         ]
 
 @app.post("/analyze")

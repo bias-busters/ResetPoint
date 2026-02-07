@@ -192,17 +192,22 @@ export default function Dashboard() {
                 <CardContent className="pb-3 text-sm text-muted-foreground">
                   
                   {/* UPDATED: Dynamic AI List */}
-                  <ul className="grid grid-cols-1 md:grid-cols-2 gap-2 list-disc list-inside">
-                    {result.ai_advice && result.ai_advice.length > 0 ? (
-                      result.ai_advice.map((tip, index) => (
-                        <li key={index} className="leading-relaxed">
-                          {tip}
-                        </li>
-                      ))
-                    ) : (
-                      <li>No specific AI recommendations generated for this dataset.</li>
-                    )}
-                  </ul>
+
+
+
+
+                 <ul className="space-y-2 mt-1"> {/* Vertical stack with spacing */}
+  {result.ai_advice && result.ai_advice.length > 0 ? (
+    result.ai_advice.map((tip, index) => (
+      <li key={index} className="flex items-start gap-3 p-3 rounded-md bg-white/5 border border-white/10">
+        <span className="text-blue-400 mt-1">➤</span> {/* Custom bullet point */}
+        <span className="text-gray-300 leading-relaxed">{tip}</span>
+      </li>
+    ))
+  ) : (
+    <li className="text-muted-foreground">Analysis pending...</li>
+  )}
+</ul>
 
                 </CardContent>
               </Card>
