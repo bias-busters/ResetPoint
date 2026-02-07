@@ -32,6 +32,7 @@ def generate_ai_advice(biases, stats):
     Sends the detected bias data to OpenRouter (DeepSeek/Llama/Claude)
     and returns 3 specific, actionable coaching tips.
     """
+
     try:
         # 1. Construct the Prompt
         # We summarize the detected issues into a string
@@ -64,16 +65,16 @@ def generate_ai_advice(biases, stats):
         # 2. Call OpenRouter
         # 'deepseek/deepseek-r1' is great for logic, or 'meta-llama/llama-3.3-70b-instruct' for speed.
         completion = client.chat.completions.create(
+            model="deepseek/deepseek-chat", # or "meta-llama/llama-3-8b-instruct:free"
+            messages=[
+                {"role": "system", "content": "You are a trading psychology expert."},
+                {"role": "user", "content": prompt},
+            ],
+            # extra_headers MUST be inside the create() call for OpenRouter
             extra_headers={
                 "HTTP-Referer": os.getenv("YOUR_SITE_URL"),
                 "X-Title": os.getenv("YOUR_SITE_NAME"),
-            },
-            mmodel="deepseek/deepseek-chat", # OR "meta-llama/llama-3.3-70b-instruct"
-            messages=[
-                {"role": "system", "content": "You are an expert behavioral finance analyst. Output JSON only."},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.7,
+            }
         )
 
         # 3. Parse Response
@@ -82,7 +83,8 @@ def generate_ai_advice(biases, stats):
         # Clean up code blocks if the AI adds them (e.g. ```json ... ```)
         if "```" in content:
             content = content.split("```")[1].replace("json", "").strip()
-            
+        
+        print("AI Raw Response:", content) # Debugging log to see the raw AI output
         return json.loads(content)
 
     except Exception as e:
