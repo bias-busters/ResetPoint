@@ -79,7 +79,7 @@ return (
             {/* LOGO */}
             <div className="relative h-9 w-9 shrink-0"> 
               <Image 
-                src="/app-logo.png" 
+                src="/ResetPoint-Logo.png" 
                 alt="ResetPoint Logo" 
                 fill 
                 className="object-contain mix-blend-screen" 
