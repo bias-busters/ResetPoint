@@ -1,5 +1,7 @@
 "use client"
 
+import PnLWidget from "@/components/PnLWidget"; // <--- Add this line
+import MarketWidget from "../components/MarketWidget";
 import Image from "next/image"
 import { useState } from "react"
 import axios from "axios"
@@ -19,6 +21,9 @@ interface AnalysisResponse {
     total_trades: number
     account_balance: number
   }
+  equity_curve: any[]
+  
+  
   biases: {
     overtrading: { detected: boolean; summary: string; metric?: string }
     loss_aversion: { detected: boolean; summary: string; ratio?: number }
@@ -64,17 +69,14 @@ export default function Dashboard() {
     setResult(null)
   }
 
-  return (
+return (
     <main className="min-h-screen bg-background text-foreground p-4 md:p-6 font-sans">
       <div className="max-w-7xl mx-auto space-y-4">
         
         {/* HEADER */}
-     <div className="flex justify-between items-center border-b border-border pb-4">
-          
-          {/* Container for Logo + Text */}
+        <div className="flex justify-between items-center border-b border-border pb-4">
           <div className="flex items-center gap-2"> 
-            
-            {/* LOGO: Increased to h-10 w-10 (40px) for better weight against the text */}
+            {/* LOGO */}
             <div className="relative h-9 w-9 shrink-0"> 
               <Image 
                 src="/app-logo.png" 
@@ -83,8 +85,7 @@ export default function Dashboard() {
                 className="object-contain mix-blend-screen" 
               />
             </div>
-            
-            {/* TEXT: Tightened leading (line-height) to lock it to the logo */}
+            {/* TEXT */}
             <div className="flex flex-col justify-center"> 
               <h1 className="text-2xl font-bold tracking-tight text-foreground leading-none">
                 ResetPoint
@@ -101,7 +102,6 @@ export default function Dashboard() {
             </Button>
           )}
         </div>
-     
 
         {/* ERROR MESSAGE */}
         {error && (
@@ -137,8 +137,21 @@ export default function Dashboard() {
         {result && (
           <div className="grid grid-cols-1 md:grid-cols-12 gap-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
             
-            {/* LEFT COLUMN: Sticky Radar Chart & Metrics */}
+            {/* === LEFT COLUMN === */}
             <div className="md:col-span-4 lg:col-span-3 space-y-4 h-full">
+              
+              {/* 1. NEW: Market Widget (Top Left) */}
+              {/* CONDITIONAL WIDGET SWAP */}
+              {/* If we have analysis results, show YOUR data. Otherwise, show Apple stock. */}
+              {result && result.equity_curve ? (
+                 <PnLWidget data={result.equity_curve} />
+              ) : (
+                 <MarketWidget />
+              )}
+
+                {/* ... existing code for the Radar Chart below ... */}
+
+              {/* 2. EXISTING: Sticky Radar Chart & Metrics */}
               <Card className="border-border bg-card/50 shadow-sm sticky top-4">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
@@ -169,7 +182,7 @@ export default function Dashboard() {
               </Card>
             </div>
 
-            {/* RIGHT COLUMN: Bias Cards & AI Coach */}
+            {/* === RIGHT COLUMN === */}
             <div className="md:col-span-8 lg:col-span-9 space-y-4">
               
               {/* THE GRID: 6 Bias Cards */}
@@ -191,23 +204,18 @@ export default function Dashboard() {
                 </CardHeader>
                 <CardContent className="pb-3 text-sm text-muted-foreground">
                   
-                  {/* UPDATED: Dynamic AI List */}
-
-
-
-
-                 <ul className="space-y-2 mt-1"> {/* Vertical stack with spacing */}
-  {result.ai_advice && result.ai_advice.length > 0 ? (
-    result.ai_advice.map((tip, index) => (
-      <li key={index} className="flex items-start gap-3 p-3 rounded-md bg-white/5 border border-white/10">
-        <span className="text-blue-400 mt-1">➤</span> {/* Custom bullet point */}
-        <span className="text-gray-300 leading-relaxed">{tip}</span>
-      </li>
-    ))
-  ) : (
-    <li className="text-muted-foreground">Analysis pending...</li>
-  )}
-</ul>
+                 <ul className="space-y-2 mt-1">
+                   {result.ai_advice && result.ai_advice.length > 0 ? (
+                     result.ai_advice.map((tip: string, index: number) => (
+                       <li key={index} className="flex items-start gap-3 p-3 rounded-md bg-background/50 border border-white/5">
+                         <span className="text-blue-500 mt-0.5">➤</span>
+                         <span className="text-foreground/90 leading-relaxed">{tip}</span>
+                       </li>
+                     ))
+                   ) : (
+                     <li className="text-muted-foreground italic">Analysis pending...</li>
+                   )}
+                 </ul>
 
                 </CardContent>
               </Card>
@@ -217,7 +225,7 @@ export default function Dashboard() {
         )}
       </div>
     </main>
-  )
+  );
 }
 
 // --- HELPER COMPONENT: Ultra Compact Bias Card ---

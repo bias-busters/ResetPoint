@@ -66,7 +66,49 @@ class BiasDetector:
             "metric": f"Loss/Win Ratio: {round(ratio, 2)}x",
             "summary": "Your average losses are significantly larger than your winners." if is_averse else "Risk management is disciplined."
         }
+    def get_equity_curve(self):
+        """
+        Returns account balance over time, ANNOTATED with detected biases.
+        """
+        # 1. Sort by time to ensure the graph draws correctly
+        df = self.df.sort_values(by='time').copy()
+        
+        # 2. Calculate Running Total (Equity)
+        df['equity'] = df['profit_loss'].cumsum()
+        
+        # 3. Initialize a 'bias' column (default is None)
+        df['bias_event'] = None
+        df['bias_color'] = None
 
+        # --- TAG REVENGE TRADES (Red) ---
+        # (Re-using the Z-Score logic here to tag specific rows)
+        df['prev_pl'] = df['profit_loss'].shift(1)
+        user_avg_size = df['quantity'].mean()
+        user_std_dev = df['quantity'].std()
+        
+        if user_std_dev > 0:
+            # Calculate Z-Score for every trade
+            df['z_score'] = (df['quantity'] - user_avg_size) / user_std_dev
+            
+            # Mark trades that are huge (Z > 3) AND after a loss
+            revenge_mask = (df['prev_pl'] < 0) & (df['z_score'] > 3)
+            df.loc[revenge_mask, 'bias_event'] = "Revenge Trade"
+            df.loc[revenge_mask, 'bias_color'] = "#ef4444" # Red
+
+        # --- TAG LOSS AVERSION (Orange) ---
+        # (Holding losers too long)
+        # We look for trades with large negative PnL and long duration
+        if 'duration' in df.columns:
+            avg_win_duration = df[df['profit_loss'] > 0]['duration'].mean()
+            # If a trade is a loss AND held 2x longer than average winners
+            loss_aversion_mask = (df['profit_loss'] < 0) & (df['duration'] > (avg_win_duration * 2))
+            # Only overwrite if not already marked as Revenge (Revenge takes priority)
+            df.loc[loss_aversion_mask & df['bias_event'].isnull(), 'bias_event'] = "Loss Aversion"
+            df.loc[loss_aversion_mask & df['bias_color'].isnull(), 'bias_color'] = "#f97316" # Orange
+
+        # 4. Return data for the frontend
+        # We replace NaN with None for valid JSON
+        return df[['time', 'equity', 'bias_event', 'bias_color']].where(pd.notnull(df), None).to_dict(orient='records')
     def detect_revenge_trading(self):
         """
         ML APPROACH: Z-Score Anomaly Detection.
@@ -154,6 +196,58 @@ class BiasDetector:
             "metric": f"Recent Volatility: {round(ratio, 2)}x",
             "summary": "Recent behavior is significantly more erratic than your baseline." if is_recency else "Recent behavior aligns with long-term consistency."
         }
+
+    def get_radar_data(self):
+        """
+        Formats the bias results for the Radar Chart on the frontend.
+        Maps 'detected' (True/False) to a score (100/20).
+        """
+        # Run analysis if it hasn't been run yet
+        results = self.analyze_behavior() if not hasattr(self, 'results') else self.results
+
+        # Helper to convert boolean to score
+        def get_score(key):
+            # If the bias key exists and 'detected' is True, return 100 (High Bias)
+            # Otherwise return 20 (Low Bias/Healthy)
+            return 100 if results.get(key, {}).get('detected', False) else 20
+
+        return [
+            {"subject": "Overtrading", "A": get_score("overtrading"), "fullMark": 150},
+            {"subject": "Loss Aversion", "A": get_score("loss_aversion"), "fullMark": 150},
+            {"subject": "Revenge Trading", "A": get_score("revenge_trading"), "fullMark": 150},
+            {"subject": "Disposition", "A": get_score("disposition"), "fullMark": 150},
+            {"subject": "Monte Carlo", "A": get_score("monte_carlo"), "fullMark": 150},
+            {"subject": "Recency Bias", "A": get_score("recency_bias"), "fullMark": 150},
+        ]
+
+    def get_equity_curve(self):
+        """
+        Returns the account balance history for the PnL Graph.
+        """
+        # Sort by time to ensure the line goes left-to-right
+        if 'timestamp' in self.df.columns:
+            df_sorted = self.df.sort_values(by='timestamp').copy()
+            time_col = 'timestamp'
+        else:
+            # Fallback if no timestamp
+            df_sorted = self.df.copy()
+            time_col = df_sorted.index.name or 'index'
+
+        # Calculate Running Total (Equity)
+        # Assumes 'profit_loss' column exists
+        if 'profit_loss' in df_sorted.columns:
+            df_sorted['equity'] = df_sorted['profit_loss'].cumsum()
+        else:
+            df_sorted['equity'] = 0
+
+        # Format for frontend
+        return [
+            {
+                "time": str(row[time_col]) if time_col in row else f"Trade {i}", 
+                "equity": row['equity']
+            } 
+            for i, row in df_sorted.iterrows()
+        ]
 
     def run_all_tests(self):
         return {
