@@ -4,3 +4,5 @@ pandas
 numpy
 scikit-learn  # Ready and waiting for Phase 2
 httpx
+openai
+python-dotenv
