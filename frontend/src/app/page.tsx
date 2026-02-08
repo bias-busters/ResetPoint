@@ -3,14 +3,16 @@
 import PnLWidget from "@/components/PnLWidget"; // <--- Add this line
 import MarketWidget from "../components/MarketWidget";
 import Image from "next/image"
-import { useState } from "react"
+import Link from "next/link"
+import { useState, useEffect } from "react"
 import axios from "axios"
-import { AlertTriangle, TrendingUp, Activity, BrainCircuit, RotateCcw, BarChart3 } from "lucide-react"
+import { AlertTriangle, TrendingUp, Activity, BrainCircuit, RotateCcw, BarChart3, User } from "lucide-react"
 import { UploadZone } from "@/components/upload-zone"
 import { BiasRadar } from "@/components/bias-radar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
+import { getLastAnalysis, setLastAnalysis, clearLastAnalysis } from "@/lib/analysis-storage"
 
 
 // Define the shape of the data returning from FastAPI
@@ -43,6 +45,14 @@ export default function Dashboard() {
   const [result, setResult] = useState<AnalysisResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  // Restore last analysis after navigation or refresh so "Back to Dashboard" shows results again
+  useEffect(() => {
+    const saved = getLastAnalysis()
+    if (saved && typeof saved === "object" && saved !== null && "status" in saved && "biases" in saved) {
+      setResult(saved as AnalysisResponse)
+    }
+  }, [])
+
   const handleAnalyze = async () => {
     if (!file) return
     setIsLoading(true)
@@ -57,6 +67,7 @@ export default function Dashboard() {
         headers: { "Content-Type": "multipart/form-data" },
       })
       setResult(response.data)
+      setLastAnalysis(response.data)
     } catch (err) {
       setError("Analysis failed. Ensure backend is running.")
       console.error(err)
@@ -68,6 +79,7 @@ export default function Dashboard() {
   const reset = () => {
     setFile(null)
     setResult(null)
+    clearLastAnalysis()
   }
 
 return (
@@ -97,11 +109,18 @@ return (
             </div>
           </div>
           
-          {result && (
-            <Button variant="outline" size="sm" onClick={reset}>
-              Analyze New File
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            {result && (
+              <Button variant="outline" size="sm" onClick={reset}>
+                Analyze New File
+              </Button>
+            )}
+            <Link href="/profile">
+              <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground hover:text-foreground">
+                <User className="h-4 w-4" /> Profile
+              </Button>
+            </Link>
+          </div>
         </div>
 
         {/* ERROR MESSAGE */}
