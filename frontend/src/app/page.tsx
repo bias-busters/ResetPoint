@@ -40,6 +40,7 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(false)
   const [result, setResult] = useState<AnalysisResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [selectedBias, setSelectedBias] = useState<{ title: string; data: any } | null>(null)
 
   // Restore last analysis after navigation or refresh so "Back to Dashboard" shows results again
   useEffect(() => {
@@ -171,26 +172,26 @@ export default function Dashboard() {
                      </div>
                   </div>
                   
-                  {/* Account Metrics Table - Simply stacked below chart */}
-                  <div className="mt-8 space-y-4 pt-6 border-t border-border bg-black/20 -mx-6 px-6 pb-4">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-muted-foreground">File</span>
-                      <span className="font-mono text-sm text-foreground">{result.metadata?.filename || "Unknown"}</span>
+                  {/* Account Metrics - compact to fit */}
+                  <div className="mt-3 space-y-1.5 pt-3 border-t border-border bg-black/20 -mx-4 px-4 pb-2">
+                    <div className="flex justify-between items-center gap-2 min-w-0">
+                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground shrink-0">File</span>
+                      <span className="font-mono text-[10px] text-foreground truncate" title={result.metadata?.filename || "Unknown"}>{result.metadata?.filename || "Unknown"}</span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-muted-foreground">Total Trades</span>
-                      <span className="font-mono text-sm text-foreground">{result.metadata?.total_trades || 0}</span>
+                    <div className="flex justify-between items-center gap-2">
+                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Trades</span>
+                      <span className="font-mono text-[10px] text-foreground">{result.metadata?.total_trades ?? 0}</span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-muted-foreground">Account Balance</span>
-                      <span className={`font-mono text-lg font-bold ${(result.metadata?.account_balance || 0) >= 0 ? 'text-green-500' : 'text-destructive'}`}>
-                        ${(result.metadata?.account_balance || 0).toLocaleString()}
+                    <div className="flex justify-between items-center gap-2">
+                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Balance</span>
+                      <span className={`font-mono text-xs font-bold ${(result.metadata?.account_balance || 0) >= 0 ? "text-green-500" : "text-destructive"}`}>
+                        ${(result.metadata?.account_balance ?? 0).toLocaleString()}
                       </span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-muted-foreground">Net Profit</span>
-                      <span className={`font-mono text-lg font-bold ${(result.metadata?.net_profit || 0) >= 0 ? "text-green-500" : "text-destructive"}`}>
-                        ${(result.metadata?.net_profit || 0).toLocaleString()}
+                    <div className="flex justify-between items-center gap-2">
+                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Net P/L</span>
+                      <span className={`font-mono text-xs font-bold ${(result.metadata?.net_profit ?? 0) >= 0 ? "text-green-500" : "text-destructive"}`}>
+                        ${(result.metadata?.net_profit ?? 0).toLocaleString()}
                       </span>
                     </div>
 
