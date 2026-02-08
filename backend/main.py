@@ -169,9 +169,10 @@ async def analyze_trading_data(file: UploadFile = File(...)):
         # Run Bias Detection Logic
         detector = BiasDetector(df)
         analysis_results = detector.run_all_tests()
-
         
-        
+        # Assuming analyze_behavior() returns the dictionary of detected biases
+        # If your detector uses run_all_tests(), ensure it returns the dict format expected by the AI
+        biases_result = detector.run_all_tests()
         # Prepare stats for the AI
         stats = {
             "filename": file.filename,
@@ -180,17 +181,20 @@ async def analyze_trading_data(file: UploadFile = File(...)):
             "net_profit": net_profit #Garvellia added this
         }
 
-        # CALL THE NEW AI FUNCTION
-        ai_recommendations = generate_ai_advice(analysis_results, stats)
+        # CALL THE AI FUNCTION
+        ai_recommendations = generate_ai_advice(biases_result, stats)
         
         return {
             "status": "success",
             "metadata": stats,
-            "biases": analysis_results,
-            "ai_advice": ai_recommendations
+            "biases": biases_result,
+            "radar_chart": detector.get_radar_data(), # Ensure these methods exist in your Class
+            "equity_curve": detector.get_equity_curve(), 
+            "ai_advice": ai_recommendations # <--- FIXED: Use the variable, don't call the class method
         }
 
     except Exception as e:
+        print(f"Server Error: {e}")
         return {"status": "error", "message": str(e)}
 
 if __name__ == "__main__":
