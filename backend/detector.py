@@ -273,3 +273,5 @@ class BiasDetector:
             "disposition": self.detect_disposition_effect(),
             "recency_bias": self.detect_recency_bias()
         }
+    
+    # end of code
