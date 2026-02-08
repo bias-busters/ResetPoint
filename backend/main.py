@@ -1,14 +1,17 @@
 import os
 import json
 import pandas as pd
-from fastapi import FastAPI, UploadFile, File
+import httpx
+from fastapi import FastAPI, UploadFile, File, Body
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from openai import OpenAI
 from dotenv import load_dotenv
 from detector import BiasDetector
 
-# Load API Key from .env
-load_dotenv()
+# Load .env from backend directory
+_load_env = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+load_dotenv(_load_env)
 
 app = FastAPI()
 
@@ -142,6 +145,81 @@ def generate_ai_advice(biases, stats):
             "🛑 Circuit Breaker: If you lose 2 trades in a row today, stop trading for 1 hour.",
             "🧠 Psychological Reset: Your metrics show stress. Switch to demo trading for the next session."
         ]
+
+
+# --- Coach Q&A (predetermined questions -> one answer) ---
+COACH_SYSTEM = """You are ResetPoint, a Behavioral Finance coach. You help traders understand biases (overtrading, revenge trading, loss aversion, recency bias, etc.) and improve discipline. Be concise, professional, and actionable. Answer in 2-4 short sentences unless the question needs more. No generic fluff."""
+
+
+def _env(key: str, default: str = "") -> str:
+    v = (os.getenv(key) or default).strip()
+    if len(v) >= 2 and v[0] == v[-1] and v[0] in '"\'':
+        v = v[1:-1].strip()
+    return v
+
+
+@app.post("/coach/answer")
+@app.post("/coach_answer")
+def coach_answer(question: str = Body(..., embed=True), context: str = Body(default=None, embed=True)):
+    try:
+        user_msg = question
+        if context:
+            user_msg = f"Context (current analysis if any):\n{context}\n\nUser question: {question}"
+        completion = client.chat.completions.create(
+            model="deepseek/deepseek-chat",
+            messages=[
+                {"role": "system", "content": COACH_SYSTEM},
+                {"role": "user", "content": user_msg},
+            ],
+            temperature=0.6,
+            extra_headers={
+                "HTTP-Referer": os.getenv("YOUR_SITE_URL"),
+                "X-Title": os.getenv("YOUR_SITE_NAME"),
+            },
+        )
+        reply = (completion.choices[0].message.content or "").strip()
+        return {"reply": reply}
+    except RateLimitError:
+        return {"reply": "API quota reached. Try again later."}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"reply": "Sorry, I couldn't generate an answer. Please try again."}
+
+
+# --- ElevenLabs TTS (optional: set ELEVENLABS_API_KEY in .env) ---
+DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"  # Rachel
+
+
+@app.post("/speak")
+async def text_to_speech(text: str = Body(..., embed=True)):
+    api_key = _env("ELEVENLABS_API_KEY")
+    if not api_key:
+        return Response(content=b"", status_code=503, media_type="text/plain")
+    voice_id = _env("ELEVENLABS_VOICE_ID") or DEFAULT_VOICE_ID
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+    headers = {"xi-api-key": api_key, "Content-Type": "application/json"}
+    payload = {"text": text, "model_id": "eleven_multilingual_v2"}
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            r = await client.post(url, json=payload, headers=headers)
+        if r.status_code != 200:
+            err_msg = r.text or f"HTTP {r.status_code}"
+            try:
+                j = r.json()
+                d = j.get("detail", j.get("message", err_msg))
+                err_msg = d.get("message", d) if isinstance(d, dict) else d
+            except Exception:
+                pass
+            err_msg = str(err_msg) if not isinstance(err_msg, str) else err_msg
+            return Response(content=err_msg.encode("utf-8"), status_code=502, media_type="text/plain; charset=utf-8")
+        return Response(content=r.content, media_type="audio/mpeg")
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return Response(content=str(e).encode("utf-8"), status_code=502, media_type="text/plain; charset=utf-8")
+
+
 @app.post("/analyze")
 async def analyze_trading_data(file: UploadFile = File(...)):
     try:

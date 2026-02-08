@@ -2,9 +2,9 @@
 
 import Image from "next/image"
 import Link from "next/link"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import axios from "axios"
-import { AlertTriangle, TrendingUp, Activity, BrainCircuit, RotateCcw, BarChart3, User } from "lucide-react"
+import { AlertTriangle, TrendingUp, Activity, BrainCircuit, RotateCcw, BarChart3, User, Volume2, Loader2, MessageCircle, ChevronDown, ChevronRight } from "lucide-react"
 import { UploadZone } from "@/components/upload-zone"
 import { BiasRadar } from "@/components/bias-radar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -35,12 +35,33 @@ interface AnalysisResponse {
   message?: string 
 }
 
+const COACH_QUESTIONS: { label: string; children?: { label: string }[] }[] = [
+  { label: "What is revenge trading?" },
+  { label: "What is loss aversion?" },
+  { label: "What did my analysis find?", children: [
+    { label: "Explain my overtrading result" },
+    { label: "Why did you recommend a break?" },
+    { label: "What does my bias radar mean?" },
+  ]},
+  { label: "How can I improve?", children: [
+    { label: "One rule I can try today" },
+    { label: "How do I stick to my rules?" },
+  ]},
+]
+
 export default function Dashboard() {
   const [file, setFile] = useState<File | null>(null)
-  const [selectedBias, setSelectedBias] = useState<{ title: string; data: any } | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [result, setResult] = useState<AnalysisResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [selectedBias, setSelectedBias] = useState<{ title: string; data: any } | null>(null)
+  const [listenLoading, setListenLoading] = useState(false)
+  const [listenError, setListenError] = useState<string | null>(null)
+  const [coachAnswer, setCoachAnswer] = useState<string | null>(null)
+  const [coachLoading, setCoachLoading] = useState(false)
+  const [coachListenLoading, setCoachListenLoading] = useState(false)
+  const [coachExpanded, setCoachExpanded] = useState<Record<number, boolean>>({})
+  const adviceAudioRef = useRef<{ audio: HTMLAudioElement; url: string } | null>(null)
 
   // Restore last analysis after navigation or refresh so "Back to Dashboard" shows results again
   useEffect(() => {
@@ -76,6 +97,112 @@ export default function Dashboard() {
     setFile(null)
     setResult(null)
     clearLastAnalysis()
+  }
+
+  const buildCoachContext = (): string | undefined => {
+    if (!result) return undefined
+    const parts = []
+    const b = result.biases
+    const detected = Object.entries(b).filter(([, v]) => v?.detected).map(([k]) => k)
+    if (detected.length) parts.push("Detected: " + detected.join(", "))
+    if (result.ai_advice?.length) parts.push("AI advice: " + result.ai_advice.join(" "))
+    return parts.length ? parts.join("\n") : undefined
+  }
+
+  const handleListenToAdvice = async () => {
+    if (!result?.ai_advice?.length) return
+    if (adviceAudioRef.current?.audio && !adviceAudioRef.current.audio.paused) {
+      adviceAudioRef.current.audio.pause()
+      adviceAudioRef.current.audio.currentTime = 0
+      URL.revokeObjectURL(adviceAudioRef.current.url)
+      adviceAudioRef.current = null
+      return
+    }
+    setListenError(null)
+    setListenLoading(true)
+    const text = result.ai_advice.join(" ")
+    try {
+      const res = await fetch("http://localhost:8000/speak", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      })
+      if (res.status === 503) {
+        setListenError("Voice not configured. Add ELEVENLABS_API_KEY to backend .env.")
+        return
+      }
+      if (!res.ok) {
+        const msg = await res.text().catch(() => "Voice unavailable.")
+        setListenError(msg || "Voice unavailable.")
+        return
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const audio = new Audio(url)
+      adviceAudioRef.current = { audio, url }
+      audio.onended = () => {
+        if (adviceAudioRef.current) {
+          URL.revokeObjectURL(adviceAudioRef.current.url)
+          adviceAudioRef.current = null
+        }
+      }
+      await audio.play()
+    } catch (e) {
+      setListenError("Could not play. Is the backend running?")
+      console.error(e)
+    } finally {
+      setListenLoading(false)
+    }
+  }
+
+  const askCoach = async (question: string) => {
+    setCoachAnswer(null)
+    setCoachLoading(true)
+    try {
+      const context = buildCoachContext()
+      const res = await fetch("http://localhost:8000/coach_answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(context ? { question, context } : { question }),
+      })
+      const text = await res.text()
+      let data: { reply?: string } = {}
+      try {
+        data = JSON.parse(text)
+      } catch {
+        setCoachAnswer(res.ok ? "Could not get an answer." : `Error ${res.status}: ${text.slice(0, 200)}`)
+        return
+      }
+      setCoachAnswer(data.reply ?? "Could not get an answer.")
+    } catch (e) {
+      setCoachAnswer("Could not reach the coach. Is the backend running?")
+      console.error(e)
+    } finally {
+      setCoachLoading(false)
+    }
+  }
+
+  const listenToCoachAnswer = async () => {
+    if (!coachAnswer) return
+    setCoachListenLoading(true)
+    try {
+      const res = await fetch("http://localhost:8000/speak", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: coachAnswer }),
+      })
+      if (res.ok) {
+        const blob = await res.blob()
+        const url = URL.createObjectURL(blob)
+        const audio = new Audio(url)
+        await audio.play()
+        audio.onended = () => URL.revokeObjectURL(url)
+      }
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setCoachListenLoading(false)
+    }
   }
 
   return (
@@ -151,10 +278,9 @@ export default function Dashboard() {
         {result && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
             
-            {/* === LEFT COLUMN: BIG PSYCH PROFILE === */}
+            {/* === LEFT COLUMN: PSYCH PROFILE + ASK COACH (sticky) === */}
             <div className="lg:col-span-4 space-y-6 flex flex-col">
-              
-              {/* Main Profile Card - REMOVED h-full so it wraps content naturally */}
+              <div className="sticky top-4 space-y-4">
               <Card className="border-border bg-card/50 shadow-md flex flex-col">
                 <CardHeader className="pb-0">
                   <CardTitle className="text-lg font-medium text-muted-foreground uppercase tracking-wider">
@@ -172,26 +298,26 @@ export default function Dashboard() {
                      </div>
                   </div>
                   
-                  {/* Account Metrics Table - Simply stacked below chart */}
-                  <div className="mt-8 space-y-4 pt-6 border-t border-border bg-black/20 -mx-6 px-6 pb-4">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-muted-foreground">File</span>
-                      <span className="font-mono text-sm text-foreground">{result.metadata?.filename || "Unknown"}</span>
+                  {/* Account Metrics - compact to fit */}
+                  <div className="mt-3 space-y-1.5 pt-3 border-t border-border bg-black/20 -mx-4 px-4 pb-2">
+                    <div className="flex justify-between items-center gap-2 min-w-0">
+                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground shrink-0">File</span>
+                      <span className="font-mono text-[10px] text-foreground truncate" title={result.metadata?.filename || "Unknown"}>{result.metadata?.filename || "Unknown"}</span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-muted-foreground">Total Trades</span>
-                      <span className="font-mono text-sm text-foreground">{result.metadata?.total_trades || 0}</span>
+                    <div className="flex justify-between items-center gap-2">
+                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Trades</span>
+                      <span className="font-mono text-[10px] text-foreground">{result.metadata?.total_trades ?? 0}</span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-muted-foreground">Account Balance</span>
-                      <span className={`font-mono text-lg font-bold ${(result.metadata?.account_balance || 0) >= 0 ? 'text-green-500' : 'text-destructive'}`}>
-                        ${(result.metadata?.account_balance || 0).toLocaleString()}
+                    <div className="flex justify-between items-center gap-2">
+                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Balance</span>
+                      <span className={`font-mono text-xs font-bold ${(result.metadata?.account_balance || 0) >= 0 ? "text-green-500" : "text-destructive"}`}>
+                        ${(result.metadata?.account_balance ?? 0).toLocaleString()}
                       </span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-muted-foreground">Net Profit</span>
-                      <span className={`font-mono text-lg font-bold ${(result.metadata?.net_profit || 0) >= 0 ? "text-green-500" : "text-destructive"}`}>
-                        ${(result.metadata?.net_profit || 0).toLocaleString()}
+                    <div className="flex justify-between items-center gap-2">
+                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Net P/L</span>
+                      <span className={`font-mono text-xs font-bold ${(result.metadata?.net_profit ?? 0) >= 0 ? "text-green-500" : "text-destructive"}`}>
+                        ${(result.metadata?.net_profit ?? 0).toLocaleString()}
                       </span>
                     </div>
 
@@ -205,6 +331,55 @@ export default function Dashboard() {
                 </CardContent>
               </Card>
 
+              {/* Ask coach - below Psychological Profile */}
+              <Card className="border-border bg-card/50 shadow-sm">
+                <CardHeader className="py-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                    <MessageCircle className="h-4 w-4" /> Ask coach
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-0 pb-3 space-y-2">
+                  <p className="text-xs text-muted-foreground">Pick a question:</p>
+                  <ul className="space-y-0.5">
+                    {COACH_QUESTIONS.map((q, i) => (
+                      <li key={i}>
+                        <div className="flex items-center gap-0.5">
+                          {q.children?.length ? (
+                            <button type="button" onClick={() => setCoachExpanded((e) => ({ ...e, [i]: !e[i] }))} className="p-0.5 rounded hover:bg-muted">
+                              {coachExpanded[i] ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                            </button>
+                          ) : null}
+                          <button type="button" onClick={() => askCoach(q.label)} disabled={coachLoading} className="text-left text-xs text-foreground hover:text-primary hover:underline py-1 px-1.5 rounded flex-1">
+                            {q.label}
+                          </button>
+                        </div>
+                        {q.children?.length && coachExpanded[i] ? (
+                          <ul className="ml-4 mt-0.5 space-y-0.5 border-l border-border pl-2">
+                            {q.children.map((sub, j) => (
+                              <li key={j}>
+                                <button type="button" onClick={() => askCoach(sub.label)} disabled={coachLoading} className="text-left text-xs text-muted-foreground hover:text-foreground hover:underline py-0.5">
+                                  {sub.label}
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                  {coachLoading && <p className="text-xs text-muted-foreground flex items-center gap-1.5 pt-1"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Getting answer...</p>}
+                  {coachAnswer && (
+                    <div className="mt-2 p-2 rounded-md bg-muted/50 border border-border">
+                      <p className="text-xs text-foreground whitespace-pre-wrap">{coachAnswer}</p>
+                      <Button variant="outline" size="sm" className="mt-1.5 h-7 text-xs gap-1" onClick={listenToCoachAnswer} disabled={coachListenLoading}>
+                        {coachListenLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Volume2 className="h-3 w-3" />}
+                        Listen
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+              </div>
             </div>
 
             {/* === RIGHT COLUMN: BIAS GRID + AI === */}
@@ -256,13 +431,24 @@ export default function Dashboard() {
                 />
               </div>
 
-              {/* 2. AI Coach Card - Fixed Gap Issue */}
+              {/* 2. AI Coach Card */}
               <Card className="bg-primary/5 border-primary/20 mt-auto">
-                <CardHeader className="py-2"> {/* Reduced padding to fix gap */}
+                <CardHeader className="py-2 flex flex-row items-center justify-between gap-2">
                   <CardTitle className="text-sm font-medium text-primary flex items-center gap-2">
                     <BrainCircuit className="h-4 w-4" /> AI Strategy Adjustments
                   </CardTitle>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleListenToAdvice}
+                    disabled={listenLoading || !result.ai_advice?.length}
+                    className="gap-1.5 border-primary/30 text-primary hover:bg-primary/10"
+                  >
+                    {listenLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Volume2 className="h-4 w-4" />}
+                    Listen to advice
+                  </Button>
                 </CardHeader>
+                {listenError && <div className="px-6 pb-1 text-xs text-destructive">{listenError}</div>}
                 <CardContent className="pt-0 pb-3 text-sm text-muted-foreground"> {/* pt-0 pulls content up */}
                  <ul className="space-y-2 mt-1">
                    {result.ai_advice && result.ai_advice.length > 0 ? (
