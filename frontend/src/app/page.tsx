@@ -20,6 +20,7 @@ interface AnalysisResponse {
     filename: string
     total_trades: number
     account_balance: number
+    net_profit: number
   }
   equity_curve: any[]
   
@@ -177,6 +178,14 @@ return (
                         ${result.metadata.account_balance.toLocaleString()}
                       </span>
                     </div>
+
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Net Profit</span>
+                      <span className={`font-mono font-bold ${result.metadata.net_profit >= 0 ? "text-green-500" : "text-destructive"}`}>
+                        ${result.metadata.net_profit.toLocaleString()}
+                      </span>
+                    </div>
+
                   </div>
                 </CardContent>
               </Card>

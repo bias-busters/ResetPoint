@@ -150,6 +150,17 @@ async def analyze_trading_data(file: UploadFile = File(...)):
         
         # Ensure standard column names (lower case)
         df.columns = df.columns.str.lower()
+
+        #Ensure data is sorted
+        timestamps = df.sort_values("timestamp")   #by garv
+
+        # Calculate net profit as final balance minus initial balance   --->   #by garv
+        if 'balance' in df.columns and len(timestamps) > 0:
+            initial_balance = timestamps['balance'].iloc[0]
+            final_balance = timestamps['balance'].iloc[-1]
+            net_profit = float(final_balance - initial_balance)
+        else:
+            net_profit = 0.0
         
         # Parse dates
         if 'timestamp' in df.columns:
@@ -157,16 +168,18 @@ async def analyze_trading_data(file: UploadFile = File(...)):
         
         # Run Bias Detection Logic
         detector = BiasDetector(df)
+               
         
         # Assuming analyze_behavior() returns the dictionary of detected biases
         # If your detector uses run_all_tests(), ensure it returns the dict format expected by the AI
         biases_result = detector.run_all_tests()
+        
         # Prepare stats for the AI
         stats = {
             "filename": file.filename,
             "total_trades": len(df),
-            # Calculate balance from profit_loss sum if balance column missing
-            "account_balance": float(df['balance'].iloc[-1]) if 'balance' in df.columns else float(df['profit_loss'].sum())
+            "account_balance": float(df['balance'].iloc[-1]) if 'balance' in df.columns else 0,
+            "net_profit": net_profit #Garvellia added this
         }
 
         # CALL THE AI FUNCTION
