@@ -2,39 +2,16 @@ import pandas as pd
 import numpy as np
 import math
 
-
 """
 BEHAVIORAL BIAS DEFINITIONS
 ---------------------------
-
-1. OVERTRADING
-   Definition: Excessive buying and selling triggered by emotion (boredom, excitement) rather than statistical edge.
-   Detection Logic: High trade frequency within short time windows (e.g., >10 trades/hour).
-
-2. LOSS AVERSION
-   Definition: The psychological tendency to prefer avoiding losses to acquiring equivalent gains.
-   Detection Logic: Win/Loss ratio < 1.0 (trader takes small profits but holds large losses).
-   
-3. REVENGE TRADING
-   Definition: An emotional attempt to force the market to return lost capital immediately after a drawdown.
-   Detection Logic: significantly increased volume or frequency immediately following a loss.
-
-4. DISPOSITION EFFECT
-   Definition: The tendency to sell winning positions too early (to lock in certainty) while holding losing positions too long (hoping for a rebound).
-   Detection Logic: Average duration of losing trades > Average duration of winning trades.
-
-5. GAMBLER'S FALLACY (MONTE CARLO BIAS)
-   Definition: The erroneous belief that a streak of independent events increases the probability of a reversal (e.g., "It's been Green 5 times, it MUST be Red next").
-   Detection Logic: Betting against the trend after a streak of N consecutive candles/trades.
-
-6. RECENCY BIAS
-   Definition: Overweighting the significance of the most recent data while ignoring long-term historical probabilities.
-   Detection Logic: Drastic changes in risk sizing based solely on the outcome of the last 3-5 trades.
+1. OVERTRADING: Excessive buying/selling (>150 trades/hr).
+2. LOSS AVERSION: Holding losers significantly longer than winners.
+3. REVENGE TRADING: Increasing position size >2x after a loss.
+4. DISPOSITION EFFECT: Selling winners too quickly.
+5. MONTE CARLO FALLACY: Betting on reversals after long streaks.
+6. RECENCY BIAS: Drastic changes in behavior based on recent outcomes.
 """
-
-import pandas as pd
-import numpy as np
-import math
 
 class BiasDetector:
     def __init__(self, df):
@@ -77,11 +54,11 @@ class BiasDetector:
         else:
              max_trades_hour = hourly_counts.max()
         
-        # Threshold: 150 trades/hr
+        # LOGIC: 150 trades/hr is the "High Frequency" cutoff.
         threshold = 150
         is_overtrading = max_trades_hour > threshold
         
-        # Collect Examples
+        # --- EVIDENCE COLLECTION ---
         examples = []
         if is_overtrading:
             # Find the specific hours that went over the limit
@@ -93,7 +70,7 @@ class BiasDetector:
                     "reason": f"Exceeded limit of {threshold} trades/hr",
                     "context": "High Frequency Burst"
                 })
-
+        
         return {
             "detected": bool(is_overtrading),
             "metric": f"{max_trades_hour} trades/hr (Limit: {threshold})",
@@ -111,6 +88,7 @@ class BiasDetector:
         avg_win = wins['profit_loss'].mean() if not wins.empty else 0.0
         avg_loss = losses['profit_loss'].abs().mean() if not losses.empty else 0.0
         
+        # Safe Division
         if avg_win > 0:
             ratio = avg_loss / avg_win
         else:
@@ -118,13 +96,14 @@ class BiasDetector:
             
         is_averse = avg_loss > (avg_win * 1.75)
         
-        # Collect Examples: Losers held too long or simply too big
+        # --- EVIDENCE COLLECTION ---
         examples = []
         if is_averse:
-            # Find the biggest losses that are driving this ratio
+            # Find the biggest losses relative to average win
             bad_losses = losses.sort_values('profit_loss').head(5)
             for idx, row in bad_losses.iterrows():
-                examples.append(self._format_example(row, f"Loss is {round(abs(row['profit_loss'])/avg_win, 1)}x your average win"))
+                loss_ratio = abs(row['profit_loss']) / avg_win if avg_win > 0 else 0
+                examples.append(self._format_example(row, f"Loss is {round(loss_ratio, 1)}x larger than avg win"))
 
         return {
             "detected": bool(is_averse),
@@ -134,42 +113,56 @@ class BiasDetector:
         }
 
     def detect_revenge_trading(self):
+        """
+        ML APPROACH: Z-Score Anomaly Detection.
+        """
         if self.df.empty:
              return {"detected": False, "metric": "No Data", "summary": "Insufficient Data", "examples": []}
 
+        # 1. Prepare Data
         self.df['prev_pl'] = self.df['profit_loss'].shift(1)
+        
+        # Filter for trades immediately following a loss
         loss_following_trades = self.df[self.df['prev_pl'] < 0].copy()
         
         if len(loss_following_trades) < 5:
-            return {"detected": False, "metric": "Insufficient Data", "summary": "Not enough data.", "examples": []}
+            return {"detected": False, "metric": "Insufficient Data", "summary": "Not enough post-loss trades to analyze.", "examples": []}
 
+        # 2. Calculate Statistics for THIS USER (Personalized Baseline)
         user_avg_size = self.df['quantity'].mean()
         user_std_dev = self.df['quantity'].std()
         
+        # Handle NaN standard deviation (happens if all trades are identical size)
         if pd.isna(user_std_dev) or user_std_dev == 0:
-            return {"detected": False, "metric": "Stable Sizing", "summary": "Consistent sizing.", "examples": []}
+            return {"detected": False, "metric": "Stable Sizing", "summary": "You never change your position size.", "examples": []}
 
-        # Z-Score Calculation
+        # 3. Calculate Z-Score
         loss_following_trades['z_score'] = (loss_following_trades['quantity'] - user_avg_size) / user_std_dev
         
-        # Identify Anomalies: > 3 std devs AND > 2x average size (to avoid low variance noise)
+        # 4. Identify Anomalies (Revenge Trades)
+        # We flag trades that are 3 standard deviations above the mean AND > 2x avg size (to filter out low variance noise)
         anomalies = loss_following_trades[
             (loss_following_trades['z_score'] > 3) & 
             (loss_following_trades['quantity'] > user_avg_size * 2)
         ]
         
         anomaly_count = len(anomalies)
-        is_revenge = anomaly_count > 0 # Strict detection for now
+        
+        # 5. Final Verdict
+        # We only flag if these anomalies make up > 1% of their post-loss activity
+        anomaly_ratio = anomaly_count / len(loss_following_trades)
+        is_revenge = anomaly_ratio > 0.01
 
-        # Collect Examples
+        # --- EVIDENCE COLLECTION ---
         examples = []
-        for idx, row in anomalies.head(5).iterrows():
-            examples.append(self._format_example(row, f"Size: {row['quantity']} (Avg: {round(user_avg_size, 1)}) after Loss"))
+        if is_revenge:
+            for idx, row in anomalies.head(5).iterrows():
+                examples.append(self._format_example(row, f"Size: {row['quantity']} (Avg: {round(user_avg_size, 1)}) after Loss"))
 
         return {
             "detected": bool(is_revenge),
             "metric": f"{anomaly_count} statistical outliers",
-            "summary": "AI detected spikes in risk immediately after losses." if is_revenge else "Risk sizing is consistent after losses.",
+            "summary": "AI detected distinct spikes in risk that deviate from your normal baseline." if is_revenge else "Your risk sizing is statistically consistent, even after losses.",
             "examples": examples
         }
 
@@ -177,10 +170,10 @@ class BiasDetector:
         if self.df.empty:
              return {"detected": False, "metric": "No Data", "summary": "Insufficient Data", "examples": []}
 
+        # Safe string handling
         self.df['is_buy'] = self.df['side'].astype(str).str.upper() == 'BUY'
         streaks = (self.df['is_buy'] != self.df['is_buy'].shift()).cumsum()
         
-        # Group by streak ID to find lengths
         streak_groups = self.df.groupby(streaks)
         streak_counts = streak_groups.size()
         
@@ -192,7 +185,7 @@ class BiasDetector:
         threshold = 15
         is_fallacy = max_streak >= threshold
         
-        # Collect Examples
+        # --- EVIDENCE COLLECTION ---
         examples = []
         if is_fallacy:
             # Find the long streaks
@@ -226,14 +219,17 @@ class BiasDetector:
         if wins.empty or losses.empty:
              return {"detected": False, "metric": "N/A", "summary": "Insufficient win/loss data.", "examples": []}
 
+        # Check means safely
         avg_win_pl = wins['profit_loss'].mean()
         avg_loss_pl = losses['profit_loss'].abs().mean()
         
+        # Logic: Must have 5x more wins AND average win must be smaller than avg loss
         is_dispo = (len(wins) > len(losses) * 5) and (avg_win_pl < avg_loss_pl)
         
-        # Collect Examples: Winners sold too small
+        # --- EVIDENCE COLLECTION ---
         examples = []
         if is_dispo:
+            # Show the smallest wins
             tiny_wins = wins.sort_values('profit_loss').head(5)
             for idx, row in tiny_wins.iterrows():
                  examples.append(self._format_example(row, f"Profit: ${round(row['profit_loss'], 2)} (Avg Loss: ${round(avg_loss_pl, 2)})"))
@@ -252,6 +248,7 @@ class BiasDetector:
         recent_volatility = self.df['quantity'].tail(5).std()
         historical_volatility = self.df['quantity'].std()
 
+        # Handle NaNs in std()
         if pd.isna(recent_volatility): recent_volatility = 0.0
         if pd.isna(historical_volatility): historical_volatility = 0.0
 
@@ -262,7 +259,7 @@ class BiasDetector:
             
         is_recency = ratio > 2.0
         
-        # Collect Examples: The recent volatile trades
+        # --- EVIDENCE COLLECTION ---
         examples = []
         if is_recency:
             recent_trades = self.df.tail(5)
@@ -277,6 +274,7 @@ class BiasDetector:
         }
 
     def run_all_tests(self):
+        # Store results in self.results so we don't calculate twice
         self.results = {
             "overtrading": self.detect_overtrading(),
             "loss_aversion": self.detect_loss_aversion(),
@@ -286,8 +284,7 @@ class BiasDetector:
             "recency_bias": self.detect_recency_bias()
         }
         return self.results
-    
-    # ... (Keep get_radar_data and get_equity_curve as they were) ...
+
     def get_radar_data(self):
         # Run analysis if it hasn't been run yet
         results = self.run_all_tests() if not hasattr(self, 'results') else self.results
@@ -305,28 +302,46 @@ class BiasDetector:
         ]
 
     def get_equity_curve(self):
+        """
+        Returns account balance over time, ANNOTATED with detected biases.
+        """
         if self.df.empty: return []
+
+        # 1. Sort by time
         df = self.df.copy()
         if 'timestamp' in df.columns:
             df = df.sort_values(by='timestamp')
+        
+        # 2. Calculate Equity
         if 'balance' not in df.columns:
             start_balance = 0 
             df['equity'] = df['profit_loss'].cumsum() + start_balance
         else:
             df['equity'] = df['balance']
 
+        # 3. DETECT BIAS EVENTS (For the Chart Markers)
         mean_size = df['quantity'].mean() if 'quantity' in df.columns else 0
         df['prev_pl'] = df['profit_loss'].shift(1)
+        
+        # Define the Bias Logic
         revenge_mask = (df['prev_pl'] < 0) & (df['quantity'] > mean_size * 2)
+        
+        # Create a column for the chart tooltip
         df['bias_label'] = None
         df.loc[revenge_mask, 'bias_label'] = "Revenge Trade"
 
+        # 4. Format for Frontend
         chart_data = []
         for index, row in df.iterrows():
+            # Clean floats (handle NaN/Inf) for JSON safety
+            equity_val = self._safe_float(row['equity'])
+            pnl_val = self._safe_float(row['profit_loss'])
+            
             chart_data.append({
                 "time": str(row['timestamp']) if 'timestamp' in row else f"Trade {index}",
-                "equity": self._safe_float(row['equity']),
+                "equity": equity_val,
                 "bias": row['bias_label'], 
-                "pnl": self._safe_float(row['profit_loss'])
+                "pnl": pnl_val
             })
+            
         return chart_data

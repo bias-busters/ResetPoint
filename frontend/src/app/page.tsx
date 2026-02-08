@@ -37,6 +37,7 @@ interface AnalysisResponse {
 
 export default function Dashboard() {
   const [file, setFile] = useState<File | null>(null)
+  const [selectedBias, setSelectedBias] = useState<{ title: string; data: any } | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [result, setResult] = useState<AnalysisResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
