@@ -1,9 +1,0 @@
-1. Voice Chatbot Popup 
-2. Stock Market Interactice Visual 
-3. [DONE] Profile Section - each user will be able to create/edit there user profile
-4. Edit UI colour scheme
-5. Train LLM for more professional and acurate responses - Done
-6. Bias Pointer - For each bis, we point out where the bias occured; provide a timestamp and more information on each bias in detail on a new page
-7. Edit Pychological Profile: -Done
-    File
-    Trades
