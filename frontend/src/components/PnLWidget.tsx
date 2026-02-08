@@ -1,50 +1,47 @@
 "use client";
 
 import React, { useState } from "react";
-import { 
-  AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, 
-  ComposedChart, Scatter 
+import {
+  ComposedChart,
+  Line,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  ReferenceDot,
+  Scatter
 } from "recharts";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Maximize2, XCircle, AlertTriangle } from "lucide-react";
 
-// Custom Dot Component to render the Bias Markers
-const BiasDot = (props: any) => {
-  const { cx, cy, payload } = props;
-  
-  // If this data point has a bias, draw a dot
-  if (payload.bias_event) {
-    return (
-      <circle 
-        cx={cx} 
-        cy={cy} 
-        r={6} 
-        fill={payload.bias_color || "#fff"} 
-        stroke="#fff" 
-        strokeWidth={2} 
-        className="animate-pulse cursor-pointer"
-      />
-    );
-  }
-  return null; // Don't draw anything for normal trades
-};
-
-// Custom Tooltip to show the Bias Name
+// --- CUSTOM TOOLTIP (Shows Bias Details) ---
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload && payload.length) {
     const data = payload[0].payload;
+    const isBias = !!data.bias;
+
     return (
-      <div className="bg-[#111] border border-white/10 p-3 rounded shadow-xl">
-        <p className="text-gray-400 text-xs mb-1">{data.time}</p>
-        <p className="text-white font-mono font-bold text-lg">
-          ${data.equity.toLocaleString()}
-        </p>
+      <div className={`p-3 rounded-lg border shadow-xl backdrop-blur-md ${isBias ? "bg-red-950/90 border-red-500/50" : "bg-[#111]/90 border-white/10"}`}>
+        <p className="text-xs text-gray-400 mb-1">{data.time}</p>
         
-        {/* If there is a bias, show the warning badge */}
-        {data.bias_event && (
-          <div className="mt-2 pt-2 border-t border-white/10">
-            <span className="text-xs font-bold px-2 py-1 rounded bg-red-900/50 text-red-200 border border-red-500/30">
-              ⚠ {data.bias_event}
+        {/* Account Balance */}
+        <div className="flex items-end gap-2">
+            <span className="text-lg font-mono font-bold text-white">
+            ${data.equity.toLocaleString()}
             </span>
-          </div>
+            <span className={`text-xs font-mono ${data.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                ({data.pnl >= 0 ? '+' : ''}{data.pnl})
+            </span>
+        </div>
+
+        {/* BIAS WARNING (Only shows if this trade was bad) */}
+        {isBias && (
+            <div className="mt-2 pt-2 border-t border-red-500/30 flex items-center gap-2 text-red-300 animate-pulse">
+                <AlertTriangle className="h-3 w-3" />
+                <span className="text-xs font-bold uppercase tracking-wider">{data.bias}</span>
+            </div>
         )}
       </div>
     );
@@ -52,106 +49,113 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   return null;
 };
 
+// --- CUSTOM DOT (Draws Red Markers for Biases) ---
+const CustomizedDot = (props: any) => {
+  const { cx, cy, payload } = props;
+  
+  if (payload.bias) {
+    return (
+      <svg x={cx - 6} y={cy - 6} width={12} height={12} fill="red" viewBox="0 0 1024 1024">
+        <circle cx="512" cy="512" r="512" fill="#ef4444" />
+        <path d="M512 0C229.2 0 0 229.2 0 512s229.2 512 512 512 512-229.2 512-512S794.8 0 512 0zm0 960C264.6 960 64 759.4 64 512S264.6 64 512 64s448 200.6 448 448-200.6 448-448 448z" fill="#7f1d1d" opacity="0.3"/>
+      </svg>
+    );
+  }
+  return null; // Don't draw dots for normal trades
+};
+
 export default function PnLWidget({ data }: { data: any[] }) {
   const [isExpanded, setIsExpanded] = useState(false);
 
   if (!data || data.length === 0) return null;
-
-  const isProfitable = data[data.length - 1].equity >= 0;
-  const color = isProfitable ? "#10b981" : "#ef4444";
+  const currentBalance = data[data.length - 1].equity;
+  const isProfitable = currentBalance >= 0;
 
   return (
     <>
-      {/* 1. MINI WIDGET */}
-      <div 
-        className="relative w-full h-48 bg-[#1e222d] rounded-xl overflow-hidden border border-white/10 shadow-lg transition-all hover:border-blue-500/50 cursor-pointer group"
+      {/* 1. DASHBOARD WIDGET */}
+      <Card 
+        className="relative overflow-hidden cursor-pointer group hover:border-blue-500/50 transition-all duration-300"
         onClick={() => setIsExpanded(true)}
       >
-        <div className="absolute top-4 left-4 z-10">
-            <h3 className="text-gray-400 text-xs font-bold uppercase tracking-widest">Performance</h3>
-            <p className={`text-2xl font-mono font-bold ${isProfitable ? 'text-green-400' : 'text-red-400'}`}>
-                ${data[data.length - 1].equity.toLocaleString()}
-            </p>
-        </div>
-
-        {/* Legend for the Mini View */}
-        <div className="absolute top-4 right-4 z-10 flex flex-col gap-1 items-end">
-            <div className="flex items-center gap-1">
-                <div className="w-2 h-2 rounded-full bg-red-500"></div>
-                <span className="text-[10px] text-gray-400">Revenge</span>
+        <CardContent className="p-0 h-48 relative">
+            
+            {/* Header Info */}
+            <div className="absolute top-4 left-4 z-10">
+                <p className="text-xs text-muted-foreground font-bold uppercase tracking-wider">Equity Curve</p>
+                <h3 className={`text-2xl font-mono font-bold ${isProfitable ? 'text-green-500' : 'text-red-500'}`}>
+                    ${currentBalance.toLocaleString()}
+                </h3>
             </div>
-            <div className="flex items-center gap-1">
-                <div className="w-2 h-2 rounded-full bg-orange-500"></div>
-                <span className="text-[10px] text-gray-400">Loss Aversion</span>
-            </div>
-        </div>
 
-        <div className="pt-10 h-full w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={data}>
-                <defs>
-                  <linearGradient id="colorPnL" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={color} stopOpacity={0.3} />
-                    <stop offset="95%" stopColor={color} stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <Area 
-                  type="monotone" 
-                  dataKey="equity" 
-                  stroke={color} 
-                  fillOpacity={1} 
-                  fill="url(#colorPnL)" 
-                  strokeWidth={2}
-                  // Attach the Custom Dot renderer here
-                  dot={<BiasDot />} 
-                />
-                <Tooltip content={<CustomTooltip />} />
-              </ComposedChart>
-            </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* 2. EXPANDED MODAL */}
-      {isExpanded && (
-        <div className="fixed inset-0 z-[9999] bg-black/90 backdrop-blur-md flex items-center justify-center p-8">
-          <div className="w-full h-full max-w-5xl bg-[#1e222d] rounded-xl border border-white/10 flex flex-col p-6 shadow-2xl">
-            <div className="flex justify-between items-center mb-6">
-                <div>
-                    <h2 className="text-2xl font-bold text-white">Equity Analysis</h2>
-                    <p className="text-gray-400 text-sm">Colored dots indicate detected psychological biases.</p>
+            {/* Hover Overlay */}
+            <div className="absolute inset-0 z-20 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="flex items-center gap-2 text-white font-bold uppercase tracking-widest text-sm">
+                    <Maximize2 className="h-4 w-4" /> Expand Analysis
                 </div>
-                <button 
-                  onClick={(e) => { e.stopPropagation(); setIsExpanded(false); }}
-                  className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg font-bold"
-                >
-                  Close
-                </button>
             </div>
-            <div className="flex-grow">
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={data}>
-                  <defs>
-                    <linearGradient id="colorPnLFull" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor={color} stopOpacity={0.3} />
-                      <stop offset="95%" stopColor={color} stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <XAxis dataKey="time" stroke="#555" tick={{fontSize: 12}} />
-                  <YAxis stroke="#555" domain={['auto', 'auto']} tickFormatter={(val)=>`$${val}`} />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Area 
-                    type="monotone" 
-                    dataKey="equity" 
-                    stroke={color} 
-                    fillOpacity={1} 
-                    fill="url(#colorPnLFull)" 
-                    strokeWidth={3}
-                    dot={<BiasDot />}
-                  />
+
+            {/* The Chart */}
+            <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={data} margin={{ top: 50, right: 0, left: 0, bottom: 0 }}>
+                    <defs>
+                        <linearGradient id="colorEquity" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor={isProfitable ? "#10b981" : "#ef4444"} stopOpacity={0.3}/>
+                            <stop offset="95%" stopColor={isProfitable ? "#10b981" : "#ef4444"} stopOpacity={0}/>
+                        </linearGradient>
+                    </defs>
+                    <Area 
+                        type="monotone" 
+                        dataKey="equity" 
+                        stroke={isProfitable ? "#10b981" : "#ef4444"} 
+                        fill="url(#colorEquity)" 
+                        strokeWidth={2}
+                        dot={<CustomizedDot />} // <--- THIS ADDS THE RED DOTS
+                    />
                 </ComposedChart>
-              </ResponsiveContainer>
+            </ResponsiveContainer>
+        </CardContent>
+      </Card>
+
+      {/* 2. EXPANDED MODAL (Full Screen Analysis) */}
+      {isExpanded && (
+        <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="w-full max-w-5xl h-[80vh] bg-background border border-border rounded-xl shadow-2xl flex flex-col">
+                
+                {/* Modal Header */}
+                <div className="p-4 border-b border-border flex justify-between items-center bg-muted/20">
+                    <div>
+                        <h2 className="text-xl font-bold flex items-center gap-2">
+                            <AlertTriangle className="text-yellow-500 h-5 w-5" /> 
+                            Behavioral Timeline
+                        </h2>
+                        <p className="text-sm text-muted-foreground">Red markers indicate detected emotional biases (Revenge Trading, Tilt).</p>
+                    </div>
+                    <button onClick={(e) => {e.stopPropagation(); setIsExpanded(false)}} className="p-2 hover:bg-destructive/20 rounded-full transition-colors">
+                        <XCircle className="h-6 w-6 text-muted-foreground hover:text-destructive" />
+                    </button>
+                </div>
+
+                {/* Full Chart */}
+                <div className="flex-1 p-6">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <ComposedChart data={data}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+                            <XAxis dataKey="time" hide />
+                            <YAxis domain={['auto', 'auto']} stroke="#666" tickFormatter={(val) => `$${val}`} />
+                            <Tooltip content={<CustomTooltip />} />
+                            <Line 
+                                type="monotone" 
+                                dataKey="equity" 
+                                stroke={isProfitable ? "#10b981" : "#ef4444"} 
+                                strokeWidth={3}
+                                dot={<CustomizedDot />} // <--- RED DOTS HERE TOO
+                                activeDot={{ r: 8, strokeWidth: 0 }}
+                            />
+                        </ComposedChart>
+                    </ResponsiveContainer>
+                </div>
             </div>
-          </div>
         </div>
       )}
     </>

@@ -203,7 +203,7 @@ class BiasDetector:
         Maps 'detected' (True/False) to a score (100/20).
         """
         # Run analysis if it hasn't been run yet
-        results = self.analyze_behavior() if not hasattr(self, 'results') else self.results
+        results = self.run_all_tests() if not hasattr(self, 'results') else self.results
 
         # Helper to convert boolean to score
         def get_score(key):
@@ -220,34 +220,49 @@ class BiasDetector:
             {"subject": "Recency Bias", "A": get_score("recency_bias"), "fullMark": 150},
         ]
 
+   
+    
     def get_equity_curve(self):
         """
-        Returns the account balance history for the PnL Graph.
+        Returns the cumulative P&L (Equity Curve) with 'Bias Flags' for the chart.
         """
-        # Sort by time to ensure the line goes left-to-right
-        if 'timestamp' in self.df.columns:
-            df_sorted = self.df.sort_values(by='timestamp').copy()
-            time_col = 'timestamp'
+        # 1. Sort by time/index
+        df = self.df.copy()
+        if 'timestamp' in df.columns:
+            df = df.sort_values(by='timestamp')
+        
+        # 2. Calculate Equity (Running Total of P/L)
+        # If 'balance' is missing, we reconstruct it from profit_loss
+        if 'balance' not in df.columns:
+            start_balance = 0 # Or passed from user input
+            df['equity'] = df['profit_loss'].cumsum() + start_balance
         else:
-            # Fallback if no timestamp
-            df_sorted = self.df.copy()
-            time_col = df_sorted.index.name or 'index'
+            df['equity'] = df['balance']
 
-        # Calculate Running Total (Equity)
-        # Assumes 'profit_loss' column exists
-        if 'profit_loss' in df_sorted.columns:
-            df_sorted['equity'] = df_sorted['profit_loss'].cumsum()
-        else:
-            df_sorted['equity'] = 0
+        # 3. DETECT BIAS EVENTS (For the Chart Markers)
+        # Logic: If you trade > 2x your normal size immediately after a loss -> FLAG IT
+        mean_size = df['quantity'].mean() if 'quantity' in df.columns else 0
+        df['prev_pl'] = df['profit_loss'].shift(1)
+        
+        # Define the Bias Logic
+        # (Revenge Trade = Loss on previous trade + Current trade is huge)
+        revenge_mask = (df['prev_pl'] < 0) & (df['quantity'] > mean_size * 2)
+        
+        # Create a column for the chart tooltip
+        df['bias_label'] = None
+        df.loc[revenge_mask, 'bias_label'] = "Revenge Trade"
 
-        # Format for frontend
-        return [
-            {
-                "time": str(row[time_col]) if time_col in row else f"Trade {i}", 
-                "equity": row['equity']
-            } 
-            for i, row in df_sorted.iterrows()
-        ]
+        # 4. Format for Frontend (Recharts)
+        chart_data = []
+        for index, row in df.iterrows():
+            chart_data.append({
+                "time": str(row['timestamp']) if 'timestamp' in row else f"Trade {index}",
+                "equity": row['equity'],
+                "bias": row['bias_label'],  # Will be 'Revenge Trade' or None
+                "pnl": row['profit_loss']
+            })
+            
+        return chart_data
 
     def run_all_tests(self):
         return {
