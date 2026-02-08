@@ -17,6 +17,29 @@ ResetPoint is a behavioral finance analytics tool that analyzes your trading dat
 
 ---
 
+## Run It Locally
+
+### Backend
+```
+cd backend
+pip install -r requirements.txt
+python main.py
+```
+Create a .env file within the backend with the following:
+```
+OPENROUTER_API_KEY=your_key_here
+# Optional
+ELEVENLABS_API_KEY=your_key_here
+```
+
+## Frontend
+```
+cd frontend
+npm install
+npm run dev
+```
+---
+
 ## Tech Stack
 
 **Frontend**
