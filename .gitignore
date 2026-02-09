@@ -1,2 +1,4 @@
 .venv
 apikey.txt
+.env
+backend/.env
